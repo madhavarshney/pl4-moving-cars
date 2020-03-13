@@ -1,14 +1,23 @@
-from ..settings import *
-from ..logger import logger, prGreen, prRed, prYellow
-from ..api.api_client import ApiClient
+from lib.settings import *
+from lib.logger import logger, prGreen, prRed, prYellow
+from .api_client import ApiClient
 
 class EventManager:
-    apiClient = ApiClient()
-    parking_lot = INITIAL_PARKING_LOT_COUNT
-    kci = INITIAL_KCI_COUNT
+    apiClient: ApiClient    = None
+    options: TrackerOptions = None
+    parking_lot             = 0
+    kci                     = 0
+
+    def __init__(self, options: TrackerOptions):
+        self.options = options
+        if self.options.NOTIFY_WEBSERVER:
+            self.apiClient = ApiClient(options)
 
     def initialize(self):
-        if SEND_WEBSERVER_EVENTS:
+        self.parking_lot = self.options.INITIAL_PARKING_LOT_COUNT
+        self.kci         = self.options.INITIAL_KCI_COUNT
+
+        if self.options.NOTIFY_WEBSERVER:
             self.apiClient.handshake()
             self.parking_lot = self.apiClient.get_count()
 
@@ -40,5 +49,5 @@ class EventManager:
         self.parking_lot += 1 if enter else -1
         logger.event("Vehicle {}".format(prGreen("ENTER") if enter else prRed("EXIT")))
 
-        if SEND_WEBSERVER_EVENTS:
+        if self.options.NOTIFY_WEBSERVER:
             r = self.apiClient.send_event(enter)

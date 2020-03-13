@@ -1,3 +1,11 @@
+# TODO: move somewhere else?
+# For testing the API client, run `pipenv run python ./lib/api/api_client.py`
+if __name__ == '__main__':
+    import sys
+    from os import path
+    sys.path.append(path.join(path.dirname(__file__), '../..'))
+
+
 import jwt
 import requests
 
@@ -6,8 +14,8 @@ from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend as crypto_default_backend
 
-from ..logger import logger
-from ..settings import *
+from lib.logger import logger
+from lib.settings import TrackerOptions
 
 def generate_key_pair():
     key = rsa.generate_private_key(
@@ -34,19 +42,23 @@ def decode_jwt(public_key, token):
     return jwt.decode(token, public_key, algorithms=['RS256'])
 
 class ApiClient:
+    options: TrackerOptions = None
     private_key = None
+
+    def __init__(self, options = TrackerOptions()):
+        self.options = options
 
     def handshake(self):
         [private_key, public_key] = generate_key_pair()
-        r = requests.post(WEBSERVER_URL + '/handshake', json={
-            'device_id': DEVICE_ID,
+        r = requests.post(self.options.WEBSERVER_URL + '/handshake', json={
+            'device_id': self.options.DEVICE_ID,
             'public_key': public_key.decode('utf-8')
         })
         logger.api(r)
         self.private_key = private_key
 
     def get_count(self):
-        r = requests.get(WEBSERVER_URL + '/count')
+        r = requests.get(self.options.WEBSERVER_URL + '/count')
         count = r.json()['count']
         logger.api(r)
         logger.info("Initial parking lot count is " + str(count))
@@ -60,15 +72,15 @@ class ApiClient:
         #     "timestamp": np.round(time.time() * 1000),
         #     "type": "IN" if enter else "OUT",
         # }
-        # r = requests.post(WEBSERVER_URL + '/admin/event', json=data)
+        # r = requests.post(self.options.WEBSERVER_URL + '/admin/event', json=data)
         token = generate_jwt(self.private_key, {
             'exp': time() + 120,
-            'device_id': DEVICE_ID,
+            'device_id': self.options.DEVICE_ID,
             'timestamp': time() * 1000,
             'type': 'IN' if inward else 'OUT'
         })
-        r = requests.post(WEBSERVER_URL + '/event', json={
-            'device_id': DEVICE_ID,
+        r = requests.post(self.options.WEBSERVER_URL + '/event', json={
+            'device_id': self.options.DEVICE_ID,
             'token': token
         })
         logger.api(r)
@@ -76,7 +88,9 @@ class ApiClient:
         return r
 
 
+# TODO: move somewhere else?
+# This is for testing the API client
 if __name__ == '__main__':
-    apiClient = ApiClient()
+    apiClient = ApiClient(TrackerOptions())
     apiClient.handshake()
     r = apiClient.send_event(True)

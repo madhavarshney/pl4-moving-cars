@@ -1,4 +1,5 @@
 from requests.models import Response
+from .settings import DEBUG
 
 # Python program to print
 # colored text and background
@@ -28,9 +29,10 @@ class Logger:
         return print(prPurple("[EVENT] ") + data)
 
     def api(self, r: Response):
-        status = (prGreen if r.ok else prRed)("OK" if r.ok else "ERR")
-        path = prLightGray(r.request.path_url)
-        data = r.json()
-        return print("{} {} {} {}".format(prBlue("[API]"), path, status, str(data)))
+        if DEBUG:
+            status = (prGreen if r.ok else prRed)("OK" if r.ok else "ERR")
+            path = prLightGray(r.request.path_url)
+            data = r.json()
+            return print("{} {} {} {}".format(prBlue("[API]"), path, status, str(data)))
 
 logger = Logger()

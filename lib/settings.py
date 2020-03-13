@@ -4,38 +4,53 @@ from enum import Enum
 dirname = os.path.dirname(__file__)
 def relpath(path): return os.path.join(dirname, path)
 
-################
-### SETTINGS ###
-################
+####################
+### Dev Settings ###
+####################
+
 DEBUG = True
-ENABLE_PROFILING = False
-SHOW_OBJECT_LABELS = False
+PROFILE = True
 
-USE_GOPRO = False
 
-DEVICE_ID = 'cam-a1'
-SEND_WEBSERVER_EVENTS = False
-WEBSERVER_URL = 'http://192.168.56.101:3000'
+#####################
+### Configuration ###
+#####################
 
-### Initial counts
-INITIAL_PARKING_LOT_COUNT = 10
-INITIAL_KCI_COUNT = 5
+class TrackerOptions:
+    DEBUG = DEBUG
+    PROFILE = PROFILE
 
-#############
-### FILES ###
-#############
+    # --- General Config --- #
+    RECORD = False
+    SHOW_OBJECT_LABELS = False
 
-## Video stream to analyze
-VIDEO_NAME = "GOPR1201.m4v"
-VIDEO_FILE_PATH = relpath("../videos/" + VIDEO_NAME)
+    # --- Webserver Config --- #
+    NOTIFY_WEBSERVER = False
+    DEVICE_ID = 'cam-a1'
+    WEBSERVER_URL = 'http://192.168.56.101:3000'
 
-## MobileNet-SSD detection network
-DETECTION_NETWORK_PATH = relpath("../ssd/MobileNetSSD_deploy.prototxt.txt")
-CAFFEMODEL_PATH = relpath("../ssd/MobileNetSSD_deploy.caffemodel")
+    # --- Initial Counts --- #
+    INITIAL_PARKING_LOT_COUNT = 10
+    INITIAL_KCI_COUNT = 5
 
-###################
-### SHARED CODE ###
-###################
+    # --- Video Config --- #
+    USE_GOPRO = False
+    VIDEO_NAME = "GOPR1201.m4v"
+    VIDEO_FILE_PATH = relpath("../videos/" + VIDEO_NAME)
+    OUTPUT_FILE_PATH = relpath("../test_counting/" + VIDEO_NAME + "-ssd_version3.avi")
+
+    # --- AI/ML Config --- #
+    DETECTION_NETWORK_PATH = relpath("../ssd/MobileNetSSD_deploy.prototxt.txt")
+    CAFFEMODEL_PATH = relpath("../ssd/MobileNetSSD_deploy.caffemodel")
+
+    def __init__(self):
+        # TODO: allow modifying default options
+        return
+
+
+#####################
+### LOCATION DATA ###
+#####################
 
 class Location(Enum):
     ROAD = 0

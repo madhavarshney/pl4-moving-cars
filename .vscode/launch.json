@@ -8,7 +8,7 @@
             "name": "Python: Vehicle Tracker",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": ".",
             "console": "integratedTerminal"
         }
     ]
