@@ -7,7 +7,7 @@ from lib.settings import TrackerOptions
 from lib.logger import logger
 from lib.api.event_manager import EventManager
 from lib.video.video_utils import preprocess, get_point
-from lib.video.goprostream import wake_gopro_on_lan, gopro_live
+from lib.video.goprostream import wake_gopro_on_lan, gopro_live, quit_gopro
 
 CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
     "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
@@ -65,7 +65,7 @@ class VehicleTracker:
             # an error occurred while trying to determine the total
             # number of frames in the video file
             except Exception as err:
-                if self.options.debug:
+                if self.options.DEBUG:
                     logger.warn(str(err))
                 logger.warn("Could not determine # of frames in video")
                 logger.warn("No approx. completion time can be provided")
@@ -98,8 +98,12 @@ class VehicleTracker:
             # if the frame was not grabbed, then we have reached the end
             # of the stream / video
             if frame is None:
-                logger.info("Video / Stream finished")
-                break
+                if self.options.USE_GOPRO:
+                    # TODO: loop until it gets the frame
+                    (grabbed, frame) = self.vs.read()
+                else:
+                    logger.info("Video / Stream finished")
+                    break
 
             processed, padhw, shavedim, resized = preprocess(frame)
             frame = resized

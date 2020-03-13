@@ -31,6 +31,8 @@ import json
 import re
 import http
 
+import threading
+
 def get_command_msg(id):
     return "_GPHD_:%u:%u:%d:%1lf\n" % (0, 0, 2, 0)
 
@@ -114,11 +116,15 @@ def gopro_live():
             MESSAGE = bytes(MESSAGE, "utf-8")
         print("Press ctrl+C to quit this application.\n")
 
-        if __name__ == '__main__':
+        def keepalive():
             while True:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.sendto(MESSAGE, (UDP_IP, UDP_PORT))
                 sleep(KEEP_ALIVE_PERIOD/1000)
+
+        x = threading.Thread(target=keepalive, args=())
+        x.start()
+
     else:
         print("branch hero3"+response)
         if "Hero3" in response or "HERO3+" in response:
@@ -133,7 +139,7 @@ def gopro_live():
 def quit_gopro():
     if RECORD:
         urlopen("http://10.5.5.9/gp/gpControl/command/shutter?p=0").read()
-    sys.exit(0)
+    # sys.exit(0)
 
 def wake_on_lan(macaddress):
     """switches on remote computers using WOL. """
