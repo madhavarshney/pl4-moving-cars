@@ -1,93 +1,22 @@
 import cv2
 import numpy as np
 import time
-import os
-from enum import Enum
 import requests
 
-from video_utils import preprocess, get_point
-from logger import Logger, prGreen, prRed, prYellow
-
-dirname = os.path.dirname(__file__)
-def relpath(path): return os.path.join(dirname, path)
-
-################
-### SETTINGS ###
-################
-debug = False
-
-### Initial counts
-parking_lot = 10
-faculty = 5
-
-#############
-### FILES ###
-#############
-
-## Video stream to analyze
-video_name = "GOPR1201.m4v"
-video_file_path = relpath("../videos/" + video_name)
-
-## MobileNet-SSD detection network
-detection_network_path = relpath("../ssd/MobileNetSSD_deploy.prototxt.txt")
-caffemodel_path = relpath("../ssd/MobileNetSSD_deploy.caffemodel")
-
-###########################
-### BEGINNING OF SCRIPT ###
-###########################
-
-class Location(Enum):
-    ROAD = 0
-    LOT = 1
-    KCI = 2
-
-LocationName = ["Road", "Parking Lot", "KCI"]
-logger = Logger()
+from ..settings import *
+from ..logger import logger
+# from ..api.api_client import ApiClient
+from ..api.event_manager import EventManager
+from ..video.video_utils import preprocess, get_point
+from ..video.goprostream import wake_gopro_on_lan, gopro_live
 
 CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
     "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
     "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
     "sofa", "train", "tvmonitor"]
-COLORS = np.random.uniform(0, 255, size=(len(CLASSES), 3))
-
-class EventManager:
-    def handle_event(self, car, start, end):
-        global parking_lot
-        global faculty
-
-        moved = start != end
-
-        logger.object("{} - Moved: {} - {} to {}".format(
-            car,
-            prGreen(moved) if moved == True else prYellow(moved),
-            LocationName[start],
-            LocationName[end]
-        ))
-        if start == Location.ROAD.value and end == Location.LOT.value:
-            self.update_lot_count(True)
-        elif start == Location.ROAD.value and end == Location.KCI.value:
-            faculty += 1
-        elif start == Location.KCI.value and end == Location.LOT.value:
-            faculty -= 1
-            self.update_lot_count(True)
-        elif start == Location.KCI.value and end == Location.ROAD.value:
-            faculty -= 1
-        elif start == Location.LOT.value and end == Location.ROAD.value:
-            self.update_lot_count(False)
-
-    def update_lot_count(self, enter):
-        global parking_lot
-        global faculty
-
-        parking_lot += 1 if enter else -1
-        logger.event("Vehicle {}".format(prGreen("ENTER") if enter else prRed("EXIT")))
-
-        # data = {"timestamp": np.round(time.time() * 1000), "type": "IN" if enter else "OUT"}
-        # r = requests.post('http://192.168.56.101:3000/event', json=data)
-        # logger.info("Response from webserver: " + r.text)
+COLORS = np.random.uniform(125, 255, size=(len(CLASSES), 3))
 
 class VehicleTracker:
-    (w, h) = (None, None)
     writer = None
     vs = None
     net = None
@@ -107,13 +36,23 @@ class VehicleTracker:
     def start(self):
         global total
 
-        self.net = cv2.dnn.readNetFromCaffe(detection_network_path, caffemodel_path)
-        self.vs = cv2.VideoCapture(video_file_path)
+        self.eventManager.initialize()
+
+        if USE_GOPRO:
+            wake_gopro_on_lan()
+            # signal.signal(signal.SIGINT, quit_gopro)
+            gopro_live()
+            self.vs = cv2.VideoCapture('udp://10.5.5.100:8554', cv2.CAP_FFMPEG)
+        else:
+            self.vs = cv2.VideoCapture(VIDEO_FILE_PATH)
+            # self.vs = cv2.VideoCapture(0)
 
         if not self.vs.isOpened():
+            # TODO: make custom error
             raise NameError('Unable to open the video file.')
             return
 
+        self.net = cv2.dnn.readNetFromCaffe(DETECTION_NETWORK_PATH, CAFFEMODEL_PATH)
         self.multiTracker = cv2.MultiTracker_create()
 
         try:
@@ -130,22 +69,26 @@ class VehicleTracker:
 
 
     def detect(self):
-        w = self.w
-        h = self.h
         global total
 
+        (w, h) = (None, None)
         multiTrackerList = []
         current_centers = {}
         paths = {}
         counter = {}
+        fps = [0, 0]
 
-        i = 0
+        currentFrame = 0
         while True:
-            i += 1
+            loopStart = time.time()
 
             ### READ and PREPROCESS next frame ###
+            # self.vs.read()
+            # self.vs.read()
+            # self.vs.read()
             # read the next frame from the file
             (grabbed, frame) = self.vs.read()
+            # self.vs.set(cv2.CAP_PROP_POS_FRAMES, currentFrame * 3)
             # frame = cv2.resize(frame, (int(frame.shape[1]/2), int(frame.shape[0]/2)))
             # if the frame was not grabbed, then we have reached the end
             # of the stream / video
@@ -156,6 +99,8 @@ class VehicleTracker:
             processed, padhw, shavedim, resized = preprocess(frame)
             frame = resized
             # print(frame.shape)
+            if ENABLE_PROFILING:
+                frameLoadEnd = time.time()
 
 
             ### UPDATE - get updated location of detected objects ###
@@ -190,8 +135,10 @@ class VehicleTracker:
                     self.eventManager.handle_event(eachCar, start, end)
                     counter[eachCar] = 1000
 
+            if ENABLE_PROFILING:
+                updateTimeEnd = time.time()
 
-            ### INITIALIZE - on initial run ###
+            ### INITIALIZE - (usually) on initial run ###
 
             # if the frame dimensions are empty, grab them
             if w is None or h is None:
@@ -201,16 +148,16 @@ class VehicleTracker:
             # initialize our video writer
             if self.writer is None:
                 fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-                if not debug:
-                    self.writer = cv2.VideoWriter(relpath("../test_counting/" + video_name + "-ssd_version3.avi"), fourcc, 30, (frame.shape[1], frame.shape[0]), True)
+                if not DEBUG:
+                    self.writer = cv2.VideoWriter(relpath("../test_counting/" + VIDEO_NAME + "-ssd_version3.avi"), fourcc, 30, (frame.shape[1], frame.shape[0]), True)
 
 
             ### PROCESS source video through AI ###
 
-            if(i % 8 == 1):
+            if (currentFrame % 8 == 0):
+                start = time.time()
                 blob = cv2.dnn.blobFromImage(frame, 0.007843, (448, 448), 127.5)
                 self.net.setInput(blob)
-                start = time.time()
                 detections = self.net.forward()
                 end = time.time()
 
@@ -248,23 +195,49 @@ class VehicleTracker:
                                 current_centers[tracker] = (startX, startY, endX, endY)
                                 paths[tracker] = []
                                 counter[tracker] = 0
-                            # cv2.rectangle(frame, (startX, startY), (endX, endY), COLORS[idx], 2)
-                            # y = startY - 15 if startY - 15 > 15 else startY + 15
-                            # cv2.putText(frame, label, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
 
+                        if SHOW_OBJECT_LABELS:
+                            cv2.rectangle(frame, (startX, startY), (endX, endY), COLORS[idx], 2)
+                            y = startY - 15 if startY - 15 > 15 else startY + 15
+                            cv2.putText(frame, label, (startX, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
+
+            if ENABLE_PROFILING:
+                processTimeEnd = time.time()
 
             ### DEBUG INFO ###
             # some information on processing single frame
-            if i == 24 and total > 0:
-                elap = (end - start)
+            elap = (end - start)
+            if currentFrame == 0 and total > 0:
                 logger.info("single frame took {:.4f} seconds".format(elap))
-                logger.info("estimated total time to finish: {:.4f}".format(elap * total))
+                logger.info("estimated total time to finish: {:.4f} seconds".format(elap * total))
+
+            loopEnd = time.time()
+
+            if ENABLE_PROFILING:
+                totalTime = loopEnd - loopStart
+                frameLoadTime = np.round((frameLoadEnd - loopStart) * 1000)
+                updateTime = np.round((updateTimeEnd - frameLoadEnd) * 1000)
+                if currentFrame % 8 == 0:
+                    processTime = np.round((elap) * 1000)
+                cv2.putText(frame, "Frame Load: {}ms, Loc Update: {}ms, Process: {}ms".format(frameLoadTime, updateTime, processTime), (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.4,  (255,0,0), 1)
+
+                # frameLoadTime = np.round(((frameLoadEnd - loopStart) / totalTime) * 100)
+                # updateTime = np.round(((updateTimeEnd - frameLoadEnd) / totalTime) * 100)
+                # processTime = np.round(((processTimeEnd - updateTimeEnd) / totalTime) * 100)
+                # print("Frame Load: {}%, Loc Update: {}%, Process: {}%".format(frameLoadTime, updateTime, processTime))
+                # cv2.putText(frame, "Frame Load: {}%, Loc Update: {}%, Process: {}%".format(frameLoadTime, updateTime, processTime), (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5,  (255,0,0), 2)
+
+            # Calculate FPS
+            fps.append(1 / (loopEnd - loopStart))
+            if len(fps) > 30:
+                fps.pop(0)
+            curFps = round(np.mean(fps))
 
             ### UPDATE GUI ###
             #cv2.line(frame, (25, 0), (25, 400), (0,255,0), 2)
-            cv2.line(frame, (100,200), (200, 260), (0, 255, 0), 2)
-            cv2.line(frame, (200, 320), (400, 250), (0,255,0), 2)
-            cv2.putText(frame, "parking_lot - " + str(parking_lot) + " | faculty - " + str(faculty) , (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5,  (255,0,0), 2)
+            cv2.line(frame, (100, 200), (200, 260), (0, 255, 0), 2)
+            cv2.line(frame, (200, 320), (400, 250), (0, 255, 0), 2)
+            cv2.putText(frame, "Parking Lot - " + str(self.eventManager.parking_lot) + " | KCI - " + str(self.eventManager.kci) + " | FPS - " + str(curFps), (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5,  (255,0,0), 2)
             cv2.imshow("Frame", frame)
 
             ### CHECK for EXIT ###
@@ -273,17 +246,20 @@ class VehicleTracker:
                 break
 
             ### WRITE output frame ###
-            if not debug:
+            if not DEBUG:
                 self.writer.write(frame)
+
+            currentFrame += 1
 
 
     def finish(self):
         logger.info("Vehicle tracking finished", "\n")
+
         # Release video reader and writer
-        if not debug and self.writer is not None:
+        if not DEBUG and self.writer is not None:
             self.writer.release()
         if self.vs is not None:
             self.vs.release()
 
-vehicleTracker = VehicleTracker()
-vehicleTracker.run()
+        if USE_GOPRO:
+            quit_gopro()

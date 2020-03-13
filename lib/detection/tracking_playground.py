@@ -71,7 +71,7 @@ else:
 # to track
 initBB = None
 
-vs = cv2.VideoCapture(relPath("../videos/cars.mp4"))
+vs = cv2.VideoCapture(relPath("../../videos/cars.mp4"))
 
 while True:
     # grab the current frame, then handle if we are using a

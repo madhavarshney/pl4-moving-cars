@@ -14,7 +14,7 @@ net = cv2.dnn.readNetFromDarknet("yolo-coco/yolov3.cfg", "yolo-coco/yolov3.weigh
 ln = net.getLayerNames()
 ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
-vs = cv2.VideoCapture(relPath("../videos_2/windy leaves.mov"))
+vs = cv2.VideoCapture(relPath("../../videos_2/windy leaves.mov"))
 writer = None
 (W, H) = (None, None)
 
@@ -108,7 +108,7 @@ while True:
     if writer is None:
         # initialize our video writer
         fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        writer = cv2.VideoWriter(relPath("../output/windy leaves-yolo.avi"), fourcc, 30, (frame.shape[1], frame.shape[0]), True)
+        writer = cv2.VideoWriter(relPath("../../output/windy leaves-yolo.avi"), fourcc, 30, (frame.shape[1], frame.shape[0]), True)
 
         # some information on processing single frame
         if total > 0:
